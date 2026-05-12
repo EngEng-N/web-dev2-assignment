@@ -33,17 +33,58 @@ app.use(express.urlencoded({ extended: true }));
 
 // Home Page
 app.get("/", (req, res) => {
+  const loginRegister = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <link rel="stylesheet" href="/style.css">
+    </head>
+    <body>
+        <div class="container">
+            <h1>Welcome to the Home Page</h1>
+            <br>
+            <a href="/login">Login</a>
+            <a href="/signup">Signup</a>
+        </div>
+    </body>
+    </html>
+    `;
 
-    res.render("index", { title: "Home", authenticated: req.session.authenticated, username: req.session.username });
+  const signedIn = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <link rel="stylesheet" href="/style.css">
+    </head>
+    <body>
+        <div class="container">
+            <h1>Hello, ${req.session.username}</h1>
+            <br>
+            <a href="/members">Go to Members Area</a>
+            <a href="/logout">Logout</a>
+        </div>
+    </body>
+    </html>
+    `;
 
+  if (!req.session.authenticated) {
+    res.send(loginRegister);
+  } else {
+    res.send(signedIn);
+  }
 });
 
 // Login Page
 app.get("/login", (req, res) => {
-    if (req.session.authenticated) {
-        return res.redirect("/");
-    }
-  res.render("login", { title: "Login" });
+  const form = `
+        <form action="/loginSubmit" method="POST">
+            <label>Login</label>
+            <input type="email" name="email" placeholder="Enter your email" required/>
+            <input type="password" name="password" placeholder="Enter your password" required/>
+            <button type="submit">Submit</button>
+        </form>
+    `;
+  res.send(form);
 });
 
 // Login Submission
@@ -58,22 +99,21 @@ app.post("/loginSubmit", async (req, res) => {
   const validatedResult = joiSchema.validate(req.body);
 
   if (validatedResult.error) {
-    return res.render("error", { title: "Error", message: "Invalid input." });
+    return res.send(`Invalid input. <a href="/login">Try again</a>`);
   }
 
   const user = await db.collection("users").findOne({ email });
 
   if (!user) {
-    return res.render("error", { title: "Error", message: "Incorrect email. User not found." });
+    return res.send(`Invalid gmail. <a href="/login">Try again</a>`);
   }
 
   if (!(await bcrypt.compare(password, user.password))) {
-    return res.render("error", { title: "Error", message: "Invalid password." });
+    return res.send(`Invalid password. <a href="/login">Try again</a>`);
   }
 
   req.session.authenticated = true;
   req.session.username = user.username;
-  req.session.user_type = user.user_type;
   req.session.cookie.maxAge = 60 * 60 * 1000;
 
   res.redirect("/members");
@@ -81,10 +121,16 @@ app.post("/loginSubmit", async (req, res) => {
 
 // Signup Page
 app.get("/signup", (req, res) => {
-    if (req.session.authenticated) {
-        return res.redirect("/"); 
-    }
-    res.render("signup", { title: "Signup" });
+  const form = `
+        <form action="/signupSubmit" method="POST">
+            <label>Create user</label>
+            <input type="text" name="username" placeholder="Enter your username" required/>
+            <input type="email" name="email" placeholder="Enter your email" required/>
+            <input type="password" name="password" placeholder="Enter your password" required/>
+            <button type="submit">Submit</button>
+        </form>
+    `;
+  res.send(form);
 });
 
 // Signup Submission
@@ -102,7 +148,7 @@ app.post("/signupSubmit", async (req, res) => {
   const validationResult = schema.validate(req.body);
 
   if (validationResult.error) {
-    return res.render("error", { title: "Error", message: "Invalid input." });
+    return res.send(`Invalid input. <a href="/signup">Try again</a>`);
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -111,12 +157,10 @@ app.post("/signupSubmit", async (req, res) => {
     username: username,
     email: email,
     password: hashedPassword,
-    user_type: "user",
   });
 
   req.session.authenticated = true;
   req.session.username = username;
-  req.session.user_type = "user";
   req.session.cookie.maxAge = 60 * 60 * 1000;
 
   res.redirect("/members");
@@ -129,7 +173,27 @@ app.get("/members", (req, res) => {
   }
 
   const images = ["cat1.jpg", "cat2.jpg", "cat3.jpg"];
-  res.render("member", { title: "Members Area", username: req.session.username, images });
+  const randomImage = images[Math.floor(Math.random() * images.length)];
+
+  const welcomeMessage = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <link rel="stylesheet" href="/style.css">
+    </head>
+    <body>
+        <div class="container">
+          <h1>Hello, ${req.session.username}</h1>
+          <br>
+          <img src="/images/${randomImage}" alt="random cat image">
+          <br>
+          <a href="/logout">Logout</a>
+        </div>
+    </body>
+    </html>
+  `;
+
+  res.send(welcomeMessage);
 });
 
 // Logout Page
@@ -139,42 +203,24 @@ app.get("/logout", (req, res) => {
   });
 });
 
-// Admin Page
-app.get("/admin", async (req, res) => {
-    if (!req.session.authenticated) {
-        return res.redirect("/login");
-    }
-
-    if (req.session.user_type !== "admin") {
-        return res.status(403).render("error", { title: "Error", message: "Access denied. Admins only." });
-    }
-
-    const users = await db.collection("users").find().toArray();
-
-    res.render("admin", { title: "Admin Page", username: req.session.username, users });
-});
-
-// Admin Promote User Page
-app.get("/promote/:email", async (req, res) => {
-  await db.collection("users").updateOne(
-    { email: req.params.email }, 
-    { $set: { user_type: "admin" } }
-  );
-  res.redirect("/admin");
-});
-
-// Admin Demote User Page
-app.get("/demote/:email", async (req, res) => {
-  await db.collection("users").updateOne(
-    { email: req.params.email }, 
-    { $set: { user_type: "user" } }
-  );
-  res.redirect("/admin");
-});
-
 // 404 Page
 app.use((req, res) => {
-  res.status(404).render("404", { title: "404 - Not Found" });
+  res.status(404).send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>404 - Not Found</title>
+        <link rel="stylesheet" href="/style.css">
+      </head>
+      <body>
+        <div class="container">
+          <h1>404 - Page Not Found</h1>
+          <p>The page you are looking for does not exist.</p>
+          <a href="/">Go back home</a>
+        </div>
+      </body>
+    </html>
+  `);
 });
 
 connectDB();

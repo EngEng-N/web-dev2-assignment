@@ -1,0 +1,15 @@
+<%- include("templates/header") %>
+<% if (!authenticated) { %>
+  <div class="container">
+    <h1>Welcome to the Home Page</h1>
+    <a href="/login">Login</a>
+    <a href="/signup">Signup</a>
+  </div>
+<% } else { %>
+  <div class="container">
+    <h1>Hello, <%= username %>!</h1>
+    <a href="/members">Go to Members Area</a>
+    <a href="/logout">Logout</a>
+  </div>
+<% } %>
+<%- include("templates/footer") %>
